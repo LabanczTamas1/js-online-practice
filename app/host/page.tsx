@@ -1,0 +1,271 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useLiveState } from "@/lib/useLiveState";
+
+const TOKEN_KEY = "jsgame_host_token";
+
+export default function HostPage() {
+  const { state, error } = useLiveState("host", 1500);
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(TOKEN_KEY);
+    if (saved) setToken(saved);
+  }, []);
+
+  async function send(action: string, index?: number) {
+    setBusy(true);
+    setActionError(null);
+    try {
+      localStorage.setItem(TOKEN_KEY, token);
+      const res = await fetch("/api/host", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, token, index }),
+      });
+      if (res.status === 401) {
+        setActionError("Wrong host token.");
+      } else if (!res.ok) {
+        setActionError(`Error: HTTP ${res.status}`);
+      }
+    } catch (e) {
+      setActionError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const q = state?.question ?? null;
+  const idx = state?.currentQuestionIndex ?? -1;
+  const total = state?.totalQuestions ?? 0;
+
+  return (
+    <main className="min-h-screen p-5 sm:p-8">
+      <div className="max-w-5xl mx-auto">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold">Facilitator console</h1>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-white/10 px-3 py-1 text-sm">
+              {state ? `${state.playerCount} players` : "…"}
+            </span>
+            <span className="rounded-full bg-white/10 px-3 py-1 text-sm capitalize">
+              {state?.phase ?? "connecting"}
+            </span>
+          </div>
+        </header>
+
+        {/* Host token */}
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-black/20 p-3">
+          <label className="text-sm text-white/70">Host token</label>
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="Set HOST_TOKEN to protect controls"
+            className="flex-1 min-w-[180px] rounded-lg bg-white/10 px-3 py-1.5 text-sm outline-none focus:ring-2 ring-fuchsia-400"
+          />
+          {actionError && (
+            <span className="text-sm text-rose-300">{actionError}</span>
+          )}
+          {error && <span className="text-sm text-amber-300">conn: {error}</span>}
+        </div>
+
+        {/* Controls */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            onClick={() => send("start")}
+            disabled={busy}
+            className="rounded-lg bg-emerald-500 px-4 py-2 font-semibold hover:bg-emerald-400 disabled:opacity-50"
+          >
+            Start
+          </button>
+          <button
+            onClick={() => send("prev")}
+            disabled={busy || idx <= 0}
+            className="rounded-lg bg-white/10 px-4 py-2 font-semibold hover:bg-white/20 disabled:opacity-40"
+          >
+            ◀ Prev
+          </button>
+          <button
+            onClick={() => send("next")}
+            disabled={busy || idx < 0}
+            className="rounded-lg bg-white/10 px-4 py-2 font-semibold hover:bg-white/20 disabled:opacity-40"
+          >
+            Next ▶
+          </button>
+          {state?.revealed ? (
+            <button
+              onClick={() => send("hide")}
+              disabled={busy || idx < 0}
+              className="rounded-lg bg-amber-500 px-4 py-2 font-semibold hover:bg-amber-400 disabled:opacity-50"
+            >
+              Hide answer
+            </button>
+          ) : (
+            <button
+              onClick={() => send("reveal")}
+              disabled={busy || idx < 0}
+              className="rounded-lg bg-cyan-500 px-4 py-2 font-semibold text-brand-purpledark hover:bg-cyan-400 disabled:opacity-50"
+            >
+              Reveal answer
+            </button>
+          )}
+          <button
+            onClick={() => send("reset")}
+            disabled={busy}
+            className="ml-auto rounded-lg bg-rose-600/80 px-4 py-2 font-semibold hover:bg-rose-500 disabled:opacity-50"
+          >
+            Reset game
+          </button>
+        </div>
+
+        {/* Current question */}
+        <section className="mt-6 grid gap-5 lg:grid-cols-5">
+          <div className="lg:col-span-3 rounded-2xl bg-white/5 p-5 animate-fade-in">
+            {idx >= 0 && q ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-white/60">
+                    Question {idx + 1} / {total}
+                  </span>
+                  <span className="rounded-full bg-fuchsia-500/30 px-3 py-0.5 text-xs uppercase tracking-wide">
+                    {q.type}
+                  </span>
+                </div>
+                {q.description && (
+                  <div className="mt-1 text-xs text-cyan-200/80">
+                    {q.description}
+                  </div>
+                )}
+                <h2 className="mt-2 text-2xl font-bold">{q.prompt}</h2>
+
+                {q.type === "multiple-choice" && q.options && (
+                  <ul className="mt-4 space-y-2">
+                    {q.options.map((opt, i) => (
+                      <li
+                        key={i}
+                        className={`rounded-lg px-4 py-2 border ${
+                          state?.revealed && i === q.correctOption
+                            ? "border-emerald-400 bg-emerald-400/20"
+                            : "border-white/10 bg-white/5"
+                        }`}
+                      >
+                        <span className="font-mono text-white/60 mr-2">
+                          {String.fromCharCode(65 + i)}.
+                        </span>
+                        {opt}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {state?.revealed && q.sampleAnswer && (
+                  <div className="mt-4">
+                    <div className="text-sm font-semibold text-emerald-300">
+                      Sample answer
+                    </div>
+                    <pre className="mt-1 overflow-auto rounded-lg bg-black/40 p-3 text-sm text-emerald-100 whitespace-pre-wrap">
+                      {q.sampleAnswer}
+                    </pre>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-16 text-white/60">
+                {state?.phase === "ended"
+                  ? "Game ended. Press Reset to run again."
+                  : "Press Start to show the first question."}
+              </div>
+            )}
+          </div>
+
+          {/* Live answers */}
+          <div className="lg:col-span-2 rounded-2xl bg-white/5 p-5">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Live answers</h3>
+              <span className="rounded-full bg-emerald-500/30 px-3 py-0.5 text-sm">
+                {state?.answerCount ?? 0} / {state?.playerCount ?? 0}
+              </span>
+            </div>
+
+            <div className="mt-3 space-y-2 max-h-[55vh] overflow-auto pr-1">
+              {state && state.answers.length > 0 ? (
+                state.answers
+                  .slice()
+                  .sort((a, b) => a.submittedAt - b.submittedAt)
+                  .map((a) => {
+                    const correct =
+                      q?.type === "multiple-choice" &&
+                      typeof a.optionIndex === "number" &&
+                      a.optionIndex === q.correctOption;
+                    return (
+                      <div
+                        key={a.playerId}
+                        className="rounded-lg bg-black/25 p-3 animate-pop"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold">{a.playerName}</span>
+                          {q?.type === "multiple-choice" &&
+                            state.revealed && (
+                              <span
+                                className={
+                                  correct
+                                    ? "text-emerald-300 text-sm"
+                                    : "text-rose-300 text-sm"
+                                }
+                              >
+                                {correct ? "✓ correct" : "✗"}
+                              </span>
+                            )}
+                        </div>
+                        {q?.type === "multiple-choice" &&
+                        typeof a.optionIndex === "number" &&
+                        q.options ? (
+                          <div className="mt-1 text-sm text-white/80">
+                            {String.fromCharCode(65 + a.optionIndex)}.{" "}
+                            {q.options[a.optionIndex]}
+                          </div>
+                        ) : (
+                          <pre className="mt-1 whitespace-pre-wrap text-sm text-white/80 font-mono">
+                            {a.value}
+                          </pre>
+                        )}
+                      </div>
+                    );
+                  })
+              ) : (
+                <div className="text-sm text-white/50 py-6 text-center">
+                  Waiting for submissions…
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Player roster */}
+        <section className="mt-6 rounded-2xl bg-white/5 p-5">
+          <h3 className="font-semibold">Players in lobby</h3>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {state && state.players.length > 0 ? (
+              state.players.map((p) => (
+                <span
+                  key={p.id}
+                  className="rounded-full bg-white/10 px-3 py-1 text-sm animate-pop"
+                >
+                  {p.name}
+                </span>
+              ))
+            ) : (
+              <span className="text-sm text-white/50">
+                Share the link so students can join /play
+              </span>
+            )}
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
