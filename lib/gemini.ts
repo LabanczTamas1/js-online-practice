@@ -4,11 +4,11 @@ import { Question } from "./types";
  * Thin client for Google's Gemini API (free tier friendly).
  *
  * Set GEMINI_API_KEY in your environment. Optionally set GEMINI_MODEL
- * (default: "gemini-2.0-flash"). If no key is present, aiEnabled() is false
+ * (default: "gemini-flash-latest"). If no key is present, aiEnabled() is false
  * and the app falls back to facilitator-only scoring.
  */
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
 
 export function aiEnabled(): boolean {
   return !!process.env.GEMINI_API_KEY;

@@ -48,7 +48,7 @@ Open http://localhost:3000 — use `/host` in one tab and `/play` in another.
      - (optional) `HOST_TOKEN` — any secret string to lock the host controls.
      - (optional) `GEMINI_API_KEY` — enables the AI reviewer for code/text
        answers (free-tier [Google AI Studio](https://aistudio.google.com/app/apikey)).
-       Optionally set `GEMINI_MODEL` (default `gemini-2.0-flash`).
+       Optionally set `GEMINI_MODEL` (default `gemini-flash-latest`).
    - Redeploy.
 
 That's it — everything here fits comfortably inside the Vercel Hobby (free) and
