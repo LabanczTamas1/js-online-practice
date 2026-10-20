@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateState } from "@/lib/store";
+import { reserveNameAndAddPlayer } from "@/lib/store";
 import { Player } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -25,9 +25,13 @@ export async function POST(req: NextRequest) {
   const playerId = randomId();
   const player: Player = { id: playerId, name, joinedAt: Date.now() };
 
-  await updateState((s) => {
-    s.players[playerId] = player;
-  });
+  const reserved = await reserveNameAndAddPlayer(player);
+  if (!reserved) {
+    return NextResponse.json(
+      { error: "That name is already taken. Please pick another." },
+      { status: 409 }
+    );
+  }
 
   return NextResponse.json({ playerId, name });
 }

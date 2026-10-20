@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateState } from "@/lib/store";
-import { defaultState } from "@/lib/types";
+import { updateMeta, resetGame, markAnswer, getState } from "@/lib/store";
 import { questions } from "@/lib/questions";
 import { MANUAL_POINTS } from "@/lib/scoring";
 
@@ -54,7 +53,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing action" }, { status: 400 });
   }
 
-  const state = await updateState((s) => {
+  if (action === "reset") {
+    await resetGame();
+    return NextResponse.json({ ok: true, phase: "lobby" });
+  }
+
+  if (action === "mark") {
+    if (
+      typeof body.questionIndex === "number" &&
+      typeof body.playerId === "string" &&
+      typeof body.correct === "boolean"
+    ) {
+      await markAnswer(
+        body.questionIndex,
+        body.playerId,
+        body.correct,
+        body.correct ? MANUAL_POINTS : 0
+      );
+    }
+    const state = await getState();
+    return NextResponse.json({ ok: true, phase: state.phase });
+  }
+
+  await updateMeta((s) => {
     switch (action) {
       case "start":
         s.phase = "question";
@@ -103,35 +124,14 @@ export async function POST(req: NextRequest) {
       case "results":
         s.phase = "results";
         break;
-      case "reset": {
-        // Keep connected players, clear progress and answers.
-        const players = s.players;
-        const fresh = defaultState();
-        fresh.players = players;
-        return fresh;
-      }
       case "end":
         s.phase = "ended";
         break;
-      case "mark": {
-        // Manually grade a code/text answer (correct/incorrect).
-        if (
-          typeof body.questionIndex === "number" &&
-          typeof body.playerId === "string" &&
-          typeof body.correct === "boolean"
-        ) {
-          const ans = s.answers[body.questionIndex]?.[body.playerId];
-          if (ans) {
-            ans.correct = body.correct;
-            ans.points = body.correct ? MANUAL_POINTS : 0;
-          }
-        }
-        break;
-      }
       default:
         break;
     }
   });
 
+  const state = await getState();
   return NextResponse.json({ ok: true, phase: state.phase });
 }

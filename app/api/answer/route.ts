@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateState, getState } from "@/lib/store";
+import { addAnswer, getState } from "@/lib/store";
 import { Answer, isAnswerable } from "@/lib/types";
 import { questions } from "@/lib/questions";
 import { speedPoints } from "@/lib/scoring";
@@ -70,10 +70,7 @@ export async function POST(req: NextRequest) {
     points,
   };
 
-  await updateState((s) => {
-    if (!s.answers[idx]) s.answers[idx] = {};
-    s.answers[idx][playerId] = answer;
-  });
+  await addAnswer(idx, answer);
 
   return NextResponse.json({ ok: true });
 }
