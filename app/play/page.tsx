@@ -176,14 +176,113 @@ export default function PlayPage() {
         )}
 
         {phase === "ended" && (
-          <div className="mt-16 text-center animate-fade-in">
-            <div className="text-6xl">🎉</div>
-            <h2 className="mt-4 text-2xl font-bold">That&apos;s a wrap!</h2>
-            <p className="mt-2 text-white/70">Thanks for playing.</p>
+          <div className="mt-10 animate-fade-in">
+            <div className="text-center">
+              <div className="text-6xl">🎉</div>
+              <h2 className="mt-4 text-2xl font-bold">That&apos;s a wrap!</h2>
+              <p className="mt-2 text-white/70">Here&apos;s the final leaderboard.</p>
+            </div>
+
+            {(() => {
+              const board = state?.leaderboard ?? [];
+              const me = board.find((e) => e.playerId === player.playerId);
+              return (
+                <>
+                  {me && (
+                    <div className="mt-6 rounded-2xl bg-fuchsia-500/20 p-5 text-center animate-pop">
+                      <div className="text-sm text-white/70">Your result</div>
+                      <div className="mt-1 text-3xl font-extrabold">
+                        #{me.rank} · {me.points} pts
+                      </div>
+                      <div className="text-sm text-white/70">
+                        {me.correct} correct
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-6 space-y-2">
+                    {board.map((e) => {
+                      const isMe = e.playerId === player.playerId;
+                      const medal =
+                        e.rank === 1
+                          ? "🥇"
+                          : e.rank === 2
+                          ? "🥈"
+                          : e.rank === 3
+                          ? "🥉"
+                          : `${e.rank}.`;
+                      return (
+                        <div
+                          key={e.playerId}
+                          className={`flex items-center justify-between rounded-xl px-4 py-3 ${
+                            isMe
+                              ? "bg-fuchsia-500/30 border border-fuchsia-300/50"
+                              : "bg-black/25"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="w-8 text-lg">{medal}</span>
+                            <span className="font-semibold">
+                              {e.playerName}
+                              {isMe && " (you)"}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold">{e.points} pts</div>
+                            <div className="text-xs text-white/60">
+                              {e.correct} correct
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {board.length === 0 && (
+                      <div className="text-center text-white/50">
+                        No scores recorded.
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
-        {(phase === "question" || phase === "results") && q && (
+        {/* Teaching slide */}
+        {(phase === "question" || phase === "results") &&
+          q &&
+          q.type === "info" && (
+            <section className="mt-6 rounded-2xl bg-white/5 p-5 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-white/60">
+                  Slide {state!.currentQuestionIndex + 1} /{" "}
+                  {state!.totalQuestions}
+                </span>
+                <span className="rounded-full bg-cyan-500/30 px-3 py-0.5 text-xs uppercase tracking-wide">
+                  learn
+                </span>
+              </div>
+              <h2 className="mt-2 text-2xl font-bold">{q.prompt}</h2>
+              {q.body && (
+                <div className="mt-3 space-y-2 text-white/85 leading-relaxed">
+                  {q.body.split("\n\n").map((p, i) => (
+                    <p key={i}>{p}</p>
+                  ))}
+                </div>
+              )}
+              {q.codeSample && (
+                <pre className="code mt-4 overflow-auto rounded-lg bg-black/40 p-4 text-sm text-cyan-100 whitespace-pre-wrap">
+                  {q.codeSample}
+                </pre>
+              )}
+              <p className="mt-4 text-center text-sm text-white/50">
+                Read along — a question is coming up next.
+              </p>
+            </section>
+          )}
+
+        {(phase === "question" || phase === "results") &&
+          q &&
+          q.type !== "info" && (
           <section className="mt-6 rounded-2xl bg-white/5 p-5 animate-fade-in">
             <div className="flex items-center justify-between">
               <span className="text-sm text-white/60">

@@ -8,6 +8,8 @@ export interface LiveAnswer {
   value?: string;
   optionIndex?: number;
   submittedAt: number;
+  correct?: boolean;
+  points?: number;
 }
 
 export interface LivePlayer {
@@ -18,13 +20,41 @@ export interface LivePlayer {
 
 export interface LiveQuestion {
   id: string;
-  type: "code" | "text" | "multiple-choice";
+  type: "code" | "text" | "multiple-choice" | "info";
   prompt: string;
   description?: string;
   options?: string[];
   correctOption?: number;
   sampleAnswer?: string;
   language?: string;
+  body?: string;
+  codeSample?: string;
+}
+
+export interface LeaderboardEntry {
+  playerId: string;
+  playerName: string;
+  points: number;
+  correct: number;
+  answered: number;
+  rank: number;
+}
+
+export interface ResultCell {
+  status: "correct" | "wrong" | "ungraded" | "none";
+  optionIndex?: number;
+  value?: string;
+}
+
+export interface ResultsMatrix {
+  questionIndexes: number[];
+  rows: Array<{
+    playerId: string;
+    playerName: string;
+    points: number;
+    correct: number;
+    cells: ResultCell[];
+  }>;
 }
 
 export interface LiveState {
@@ -38,6 +68,9 @@ export interface LiveState {
   playerCount: number;
   answers: LiveAnswer[];
   answerCount: number;
+  leaderboard: LeaderboardEntry[];
+  results: ResultsMatrix | null;
+  questionTitles: Array<{ type: string; prompt: string }> | null;
   updatedAt: number;
 }
 

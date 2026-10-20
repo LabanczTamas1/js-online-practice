@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useLiveState } from "@/lib/useLiveState";
+import { useLiveState, LiveState } from "@/lib/useLiveState";
 
 const TOKEN_KEY = "jsgame_host_token";
 
@@ -38,9 +38,33 @@ export default function HostPage() {
     }
   }
 
+  async function mark(
+    playerId: string,
+    questionIndex: number,
+    correct: boolean
+  ) {
+    try {
+      await fetch("/api/host", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "mark",
+          token,
+          playerId,
+          questionIndex,
+          correct,
+        }),
+      });
+    } catch {
+      /* ignore transient errors; next poll reflects state */
+    }
+  }
+
   const q = state?.question ?? null;
   const idx = state?.currentQuestionIndex ?? -1;
   const total = state?.totalQuestions ?? 0;
+  const isInfo = q?.type === "info";
+  const ended = state?.phase === "ended";
 
   return (
     <main className="min-h-screen p-5 sm:p-8">
@@ -99,7 +123,7 @@ export default function HostPage() {
           {state?.revealed ? (
             <button
               onClick={() => send("hide")}
-              disabled={busy || idx < 0}
+              disabled={busy || idx < 0 || isInfo}
               className="rounded-lg bg-amber-500 px-4 py-2 font-semibold hover:bg-amber-400 disabled:opacity-50"
             >
               Hide answer
@@ -107,12 +131,19 @@ export default function HostPage() {
           ) : (
             <button
               onClick={() => send("reveal")}
-              disabled={busy || idx < 0}
+              disabled={busy || idx < 0 || isInfo}
               className="rounded-lg bg-cyan-500 px-4 py-2 font-semibold text-brand-purpledark hover:bg-cyan-400 disabled:opacity-50"
             >
               Reveal answer
             </button>
           )}
+          <button
+            onClick={() => send("end")}
+            disabled={busy || idx < 0}
+            className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold hover:bg-indigo-400 disabled:opacity-50"
+          >
+            End &amp; show results
+          </button>
           <button
             onClick={() => send("reset")}
             disabled={busy}
@@ -122,17 +153,20 @@ export default function HostPage() {
           </button>
         </div>
 
-        {/* Current question */}
+        {ended ? (
+          <EndResults state={state} />
+        ) : (
+        /* Current question */
         <section className="mt-6 grid gap-5 lg:grid-cols-5">
           <div className="lg:col-span-3 rounded-2xl bg-white/5 p-5 animate-fade-in">
             {idx >= 0 && q ? (
               <>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-white/60">
-                    Question {idx + 1} / {total}
+                    {isInfo ? "Slide" : "Question"} {idx + 1} / {total}
                   </span>
                   <span className="rounded-full bg-fuchsia-500/30 px-3 py-0.5 text-xs uppercase tracking-wide">
-                    {q.type}
+                    {isInfo ? "info" : q.type}
                   </span>
                 </div>
                 {q.description && (
@@ -141,6 +175,19 @@ export default function HostPage() {
                   </div>
                 )}
                 <h2 className="mt-2 text-2xl font-bold">{q.prompt}</h2>
+
+                {isInfo && q.body && (
+                  <div className="mt-3 space-y-2 text-white/85 leading-relaxed">
+                    {q.body.split("\n\n").map((p, i) => (
+                      <p key={i}>{p}</p>
+                    ))}
+                  </div>
+                )}
+                {isInfo && q.codeSample && (
+                  <pre className="code mt-4 overflow-auto rounded-lg bg-black/40 p-3 text-sm text-cyan-100 whitespace-pre-wrap">
+                    {q.codeSample}
+                  </pre>
+                )}
 
                 {q.type === "multiple-choice" && q.options && (
                   <ul className="mt-4 space-y-2">
@@ -175,9 +222,7 @@ export default function HostPage() {
               </>
             ) : (
               <div className="text-center py-16 text-white/60">
-                {state?.phase === "ended"
-                  ? "Game ended. Press Reset to run again."
-                  : "Press Start to show the first question."}
+                Press Start to show the first slide.
               </div>
             )}
           </div>
@@ -192,15 +237,20 @@ export default function HostPage() {
             </div>
 
             <div className="mt-3 space-y-2 max-h-[55vh] overflow-auto pr-1">
-              {state && state.answers.length > 0 ? (
+              {isInfo ? (
+                <div className="text-sm text-white/50 py-6 text-center">
+                  Teaching slide — no answers needed. Press Next ▶ when ready.
+                </div>
+              ) : state && state.answers.length > 0 ? (
                 state.answers
                   .slice()
                   .sort((a, b) => a.submittedAt - b.submittedAt)
                   .map((a) => {
+                    const mc = q?.type === "multiple-choice";
                     const correct =
-                      q?.type === "multiple-choice" &&
+                      mc &&
                       typeof a.optionIndex === "number" &&
-                      a.optionIndex === q.correctOption;
+                      a.optionIndex === q?.correctOption;
                     return (
                       <div
                         key={a.playerId}
@@ -208,22 +258,21 @@ export default function HostPage() {
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-semibold">{a.playerName}</span>
-                          {q?.type === "multiple-choice" &&
-                            state.revealed && (
-                              <span
-                                className={
-                                  correct
-                                    ? "text-emerald-300 text-sm"
-                                    : "text-rose-300 text-sm"
-                                }
-                              >
-                                {correct ? "✓ correct" : "✗"}
-                              </span>
-                            )}
+                          {mc && state.revealed && (
+                            <span
+                              className={
+                                correct
+                                  ? "text-emerald-300 text-sm"
+                                  : "text-rose-300 text-sm"
+                              }
+                            >
+                              {correct ? "✓ correct" : "✗"}
+                            </span>
+                          )}
                         </div>
-                        {q?.type === "multiple-choice" &&
+                        {mc &&
                         typeof a.optionIndex === "number" &&
-                        q.options ? (
+                        q?.options ? (
                           <div className="mt-1 text-sm text-white/80">
                             {String.fromCharCode(65 + a.optionIndex)}.{" "}
                             {q.options[a.optionIndex]}
@@ -232,6 +281,37 @@ export default function HostPage() {
                           <pre className="mt-1 whitespace-pre-wrap text-sm text-white/80 font-mono">
                             {a.value}
                           </pre>
+                        )}
+
+                        {/* Manual grading for code/text answers */}
+                        {!mc && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <button
+                              onClick={() => mark(a.playerId, idx, true)}
+                              className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                                a.correct === true
+                                  ? "bg-emerald-500 text-black"
+                                  : "bg-white/10 hover:bg-emerald-500/40"
+                              }`}
+                            >
+                              ✓ Correct
+                            </button>
+                            <button
+                              onClick={() => mark(a.playerId, idx, false)}
+                              className={`rounded-md px-2 py-1 text-xs font-semibold ${
+                                a.correct === false
+                                  ? "bg-rose-500 text-black"
+                                  : "bg-white/10 hover:bg-rose-500/40"
+                              }`}
+                            >
+                              ✗ Wrong
+                            </button>
+                            {a.correct === undefined && (
+                              <span className="text-xs text-white/40">
+                                ungraded
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     );
@@ -244,6 +324,7 @@ export default function HostPage() {
             </div>
           </div>
         </section>
+        )}
 
         {/* Player roster */}
         <section className="mt-6 rounded-2xl bg-white/5 p-5">
@@ -267,5 +348,120 @@ export default function HostPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function medal(rank: number): string {
+  return rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}.`;
+}
+
+function EndResults({ state }: { state: LiveState | null }) {
+  if (!state) return null;
+  const board = state.leaderboard ?? [];
+  const results = state.results;
+  const titles = state.questionTitles ?? [];
+
+  return (
+    <div className="mt-6 space-y-6 animate-fade-in">
+      {/* Leaderboard */}
+      <section className="rounded-2xl bg-white/5 p-5">
+        <h2 className="text-xl font-bold">🏆 Final leaderboard</h2>
+        <div className="mt-4 space-y-2">
+          {board.length === 0 && (
+            <div className="text-white/50">No players.</div>
+          )}
+          {board.map((e) => (
+            <div
+              key={e.playerId}
+              className={`flex items-center justify-between rounded-xl px-4 py-3 ${
+                e.rank === 1
+                  ? "bg-yellow-400/20 border border-yellow-300/40"
+                  : "bg-black/25"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <span className="w-8 text-lg">{medal(e.rank)}</span>
+                <span className="font-semibold">{e.playerName}</span>
+              </div>
+              <div className="text-right">
+                <div className="font-bold">{e.points} pts</div>
+                <div className="text-xs text-white/60">
+                  {e.correct} correct
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Per-question results table */}
+      <section className="rounded-2xl bg-white/5 p-5">
+        <h2 className="text-xl font-bold">Results by question</h2>
+        <p className="mt-1 text-sm text-white/60">
+          ✓ correct · ✗ wrong · — not answered · ? not graded (mark code/text
+          answers while reviewing).
+        </p>
+        <div className="mt-4 overflow-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr>
+                <th className="sticky left-0 bg-brand-purpledark/80 px-3 py-2 text-left">
+                  Student
+                </th>
+                {results?.questionIndexes.map((qi, k) => (
+                  <th
+                    key={qi}
+                    className="px-2 py-2 text-center whitespace-nowrap"
+                    title={titles[qi]?.prompt}
+                  >
+                    Q{k + 1}
+                  </th>
+                ))}
+                <th className="px-3 py-2 text-right">Pts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results && results.rows.length > 0 ? (
+                results.rows.map((row) => (
+                  <tr key={row.playerId} className="border-t border-white/10">
+                    <td className="sticky left-0 bg-brand-purpledark/80 px-3 py-2 font-semibold whitespace-nowrap">
+                      {row.playerName}
+                    </td>
+                    {row.cells.map((c, k) => (
+                      <td key={k} className="px-2 py-2 text-center">
+                        {c.status === "correct" && (
+                          <span className="text-emerald-300">✓</span>
+                        )}
+                        {c.status === "wrong" && (
+                          <span className="text-rose-300">✗</span>
+                        )}
+                        {c.status === "ungraded" && (
+                          <span className="text-amber-300">?</span>
+                        )}
+                        {c.status === "none" && (
+                          <span className="text-white/25">—</span>
+                        )}
+                      </td>
+                    ))}
+                    <td className="px-3 py-2 text-right font-bold">
+                      {row.points}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={(results?.questionIndexes.length ?? 0) + 2}
+                    className="px-3 py-6 text-center text-white/50"
+                  >
+                    No results yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   );
 }

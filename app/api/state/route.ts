@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getState } from "@/lib/store";
 import { questions } from "@/lib/questions";
+import { buildLeaderboard, buildResultsMatrix } from "@/lib/scoring";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,8 @@ export async function GET(req: NextRequest) {
   const answersForQuestion =
     idx >= 0 ? Object.values(state.answers[idx] ?? {}) : [];
 
+  const leaderboard = buildLeaderboard(state, questions);
+
   return NextResponse.json({
     phase: state.phase,
     currentQuestionIndex: idx,
@@ -47,6 +50,14 @@ export async function GET(req: NextRequest) {
             submittedAt: a.submittedAt,
           })),
     answerCount: answersForQuestion.length,
+    leaderboard,
+    // Full per-question results matrix is host-only.
+    results: role === "host" ? buildResultsMatrix(state, questions) : null,
+    // Question prompts for the results table header (host-only).
+    questionTitles:
+      role === "host"
+        ? questions.map((q) => ({ type: q.type, prompt: q.prompt }))
+        : null,
     updatedAt: state.updatedAt,
   });
 }

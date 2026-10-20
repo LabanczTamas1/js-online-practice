@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { updateState } from "@/lib/store";
 import { defaultState } from "@/lib/types";
 import { questions } from "@/lib/questions";
+import { MANUAL_POINTS } from "@/lib/scoring";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +27,18 @@ type Action =
   | "hide"
   | "results"
   | "reset"
-  | "end";
+  | "end"
+  | "mark";
 
 export async function POST(req: NextRequest) {
-  let body: { action?: Action; token?: string; index?: number };
+  let body: {
+    action?: Action;
+    token?: string;
+    index?: number;
+    playerId?: string;
+    questionIndex?: number;
+    correct?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -104,6 +113,21 @@ export async function POST(req: NextRequest) {
       case "end":
         s.phase = "ended";
         break;
+      case "mark": {
+        // Manually grade a code/text answer (correct/incorrect).
+        if (
+          typeof body.questionIndex === "number" &&
+          typeof body.playerId === "string" &&
+          typeof body.correct === "boolean"
+        ) {
+          const ans = s.answers[body.questionIndex]?.[body.playerId];
+          if (ans) {
+            ans.correct = body.correct;
+            ans.points = body.correct ? MANUAL_POINTS : 0;
+          }
+        }
+        break;
+      }
       default:
         break;
     }

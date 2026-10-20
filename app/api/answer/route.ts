@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateState, getState } from "@/lib/store";
-import { Answer } from "@/lib/types";
+import { Answer, isAnswerable } from "@/lib/types";
 import { questions } from "@/lib/questions";
+import { speedPoints } from "@/lib/scoring";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,24 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const currentQuestion = questions[idx];
+  if (!isAnswerable(currentQuestion)) {
+    return NextResponse.json(
+      { error: "This slide is not a question" },
+      { status: 409 }
+    );
+  }
+
+  // Auto-grade multiple-choice answers immediately.
+  let correct: boolean | undefined;
+  let points = 0;
+  if (currentQuestion.type === "multiple-choice") {
+    correct =
+      typeof body.optionIndex === "number" &&
+      body.optionIndex === currentQuestion.correctOption;
+    points = correct ? speedPoints(Date.now(), state.questionStartedAt) : 0;
+  }
+
   const answer: Answer = {
     playerId,
     playerName: player.name,
@@ -47,6 +66,8 @@ export async function POST(req: NextRequest) {
     optionIndex:
       typeof body.optionIndex === "number" ? body.optionIndex : undefined,
     submittedAt: Date.now(),
+    correct,
+    points,
   };
 
   await updateState((s) => {

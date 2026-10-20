@@ -1,4 +1,4 @@
-export type QuestionType = "code" | "text" | "multiple-choice";
+export type QuestionType = "code" | "text" | "multiple-choice" | "info";
 
 export interface Question {
   id: string;
@@ -14,6 +14,15 @@ export interface Question {
   sampleAnswer?: string;
   /** Programming language hint for code questions (e.g. "javascript"). */
   language?: string;
+  /** Explanatory body text for "info" teaching slides. */
+  body?: string;
+  /** Optional code example displayed on an "info" slide. */
+  codeSample?: string;
+}
+
+/** True for slides that students actually answer (not teaching slides). */
+export function isAnswerable(q: Pick<Question, "type">): boolean {
+  return q.type !== "info";
 }
 
 export type GamePhase = "lobby" | "question" | "results" | "ended";
@@ -31,6 +40,14 @@ export interface Answer {
   /** Selected option index for multiple-choice questions. */
   optionIndex?: number;
   submittedAt: number;
+  /**
+   * Whether the answer is correct. Auto-set for multiple-choice on submit;
+   * set by the facilitator (via the "mark" action) for code/text answers.
+   * `undefined` means not yet graded.
+   */
+  correct?: boolean;
+  /** Points awarded for this answer (0 if incorrect / ungraded). */
+  points?: number;
 }
 
 export interface GameState {
