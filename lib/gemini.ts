@@ -68,11 +68,16 @@ function parseReview(text: string): ReviewResult {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    // Fallback: find a leading number as the score.
-    const num = text.match(/\b(\d{1,2})\b/);
+    // Response was likely truncated. Salvage the score and any readable
+    // justification text, but never leak raw JSON to the student.
+    const scoreMatch = raw.match(/"score"\s*:\s*(\d{1,2})/);
+    const justMatch = raw.match(/"justification"\s*:\s*"([^"]*)/);
     return {
-      score: num ? clampScore(Number(num[1])) : 0,
-      justification: text.trim().slice(0, 400) || "No justification provided.",
+      score: scoreMatch ? clampScore(Number(scoreMatch[1])) : 0,
+      justification:
+        justMatch && justMatch[1].trim()
+          ? justMatch[1].trim().slice(0, 400)
+          : "Review unavailable (response was cut off).",
     };
   }
   return {
@@ -111,8 +116,11 @@ export async function reviewAnswer(
       ],
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 200,
+        maxOutputTokens: 800,
         responseMimeType: "application/json",
+        // Newer flash models reserve output tokens for internal "thinking".
+        // Disable it so the whole budget goes to the actual JSON response.
+        thinkingConfig: { thinkingBudget: 0 },
       },
     }),
   });
