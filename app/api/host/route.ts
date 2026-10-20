@@ -5,6 +5,7 @@ import {
   markAnswer,
   setManualScore,
   setAiQuota,
+  removePlayer,
   getState,
 } from "@/lib/store";
 import { questions } from "@/lib/questions";
@@ -36,7 +37,8 @@ type Action =
   | "end"
   | "mark"
   | "score"
-  | "resumeAi";
+  | "resumeAi"
+  | "removePlayer";
 
 export async function POST(req: NextRequest) {
   let body: {
@@ -70,6 +72,14 @@ export async function POST(req: NextRequest) {
 
   if (action === "resumeAi") {
     await setAiQuota(false, null);
+    const state = await getState();
+    return NextResponse.json({ ok: true, phase: state.phase });
+  }
+
+  if (action === "removePlayer") {
+    if (typeof body.playerId === "string") {
+      await removePlayer(body.playerId);
+    }
     const state = await getState();
     return NextResponse.json({ ok: true, phase: state.phase });
   }

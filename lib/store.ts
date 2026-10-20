@@ -151,7 +151,47 @@ export async function reserveNameAndAddPlayer(
   return true;
 }
 
-/** Store a student's answer. Field key keeps writes independent/atomic. */
+/**
+ * Facilitator removes a student: deletes the player, frees their display name
+ * so it can be reused, and clears all of their answers.
+ */
+export async function removePlayer(playerId: string): Promise<void> {
+  if (!redis) {
+    const s = memState();
+    const player = s.players[playerId];
+    if (player) {
+      const nameKey = player.name.trim().toLowerCase();
+      delete memNames()[nameKey];
+    }
+    delete s.players[playerId];
+    for (const q of Object.keys(s.answers)) {
+      delete s.answers[Number(q)][playerId];
+    }
+    s.updatedAt = Date.now();
+    return;
+  }
+
+  const player = await redis.hget<Player>(PLAYERS_KEY, playerId);
+  await redis.hdel(PLAYERS_KEY, playerId);
+  if (player) {
+    const nameKey = player.name.trim().toLowerCase();
+    await redis.hdel(NAMES_KEY, nameKey);
+  }
+
+  // Remove this player's answers across all questions.
+  const answersHash =
+    (await redis.hgetall<Record<string, Answer>>(ANSWERS_KEY)) ?? {};
+  const fieldsToDelete = Object.keys(answersHash).filter((field) => {
+    const sep = field.indexOf(":");
+    return sep >= 0 && field.slice(sep + 1) === playerId;
+  });
+  if (fieldsToDelete.length > 0) {
+    await redis.hdel(ANSWERS_KEY, ...fieldsToDelete);
+  }
+  await touchMeta();
+}
+
+
 export async function addAnswer(
   questionIndex: number,
   answer: Answer

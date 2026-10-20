@@ -10,6 +10,7 @@ export default function HostPage() {
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem(TOKEN_KEY);
@@ -72,6 +73,18 @@ export default function HostPage() {
     }
   }
 
+  async function removePlayer(playerId: string) {
+    try {
+      await fetch("/api/host", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "removePlayer", token, playerId }),
+      });
+    } catch {
+      /* ignore transient errors; next poll reflects state */
+    }
+  }
+
   // Drive the AI review queue one item at a time (~every 4.5s) so we stay
   // comfortably within the free-tier rate limit. Pauses while quota is hit.
   const quotaHit = state?.aiQuotaHit ?? false;
@@ -105,8 +118,77 @@ export default function HostPage() {
             <span className="rounded-full bg-white/10 px-3 py-1 text-sm capitalize">
               {state?.phase ?? "connecting"}
             </span>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              title="Manage students"
+              aria-label="Manage students"
+              className="rounded-full bg-white/10 p-2 hover:bg-white/20"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
           </div>
         </header>
+
+        {/* Manage students modal */}
+        {settingsOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in"
+            onClick={() => setSettingsOpen(false)}
+          >
+            <div
+              className="w-full max-w-md rounded-2xl bg-brand-purpledark p-5 shadow-2xl ring-1 ring-white/10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold">Manage students</h2>
+                <button
+                  onClick={() => setSettingsOpen(false)}
+                  aria-label="Close"
+                  className="rounded-lg px-2 py-1 text-white/70 hover:bg-white/10"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="mt-1 text-sm text-white/60">
+                Remove a student to free their nickname and clear their answers.
+              </p>
+              <div className="mt-4 max-h-[55vh] space-y-2 overflow-auto pr-1">
+                {state && state.players.length > 0 ? (
+                  state.players.map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between rounded-lg bg-black/25 px-3 py-2"
+                    >
+                      <span className="font-semibold">{p.name}</span>
+                      <button
+                        onClick={() => removePlayer(p.id)}
+                        className="rounded-md bg-rose-600/80 px-3 py-1 text-sm font-semibold hover:bg-rose-500"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-6 text-center text-sm text-white/50">
+                    No students have joined yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Host token */}
         <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-black/20 p-3">
