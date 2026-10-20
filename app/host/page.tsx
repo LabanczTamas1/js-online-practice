@@ -223,6 +223,24 @@ export default function HostPage() {
           </div>
         )}
 
+        {/* AI error (non-quota) notification */}
+        {!state?.aiQuotaHit && state?.aiError && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-400/40 bg-rose-500/15 p-3">
+            <span className="text-rose-200 text-sm">
+              ⚠️ AI reviewer error: {state.aiError}. Check that{" "}
+              <code className="rounded bg-black/30 px-1">GEMINI_API_KEY</code> is
+              set in Vercel and that you redeployed. You can score answers
+              manually with the sliders below.
+            </span>
+            <button
+              onClick={resumeAi}
+              className="ml-auto rounded-lg bg-rose-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-400"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Controls */}
         <div className="mt-4 flex flex-wrap gap-2">
           <button

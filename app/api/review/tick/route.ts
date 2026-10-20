@@ -5,6 +5,7 @@ import {
   setAiReview,
   setReviewStatus,
   setAiQuota,
+  setAiError,
   reviewQueueLength,
 } from "@/lib/store";
 import { questions } from "@/lib/questions";
@@ -79,6 +80,8 @@ export async function POST(req: NextRequest) {
       result.justification,
       "done"
     );
+    // A success clears any previous transient error banner.
+    if (state.aiError) await setAiError(null);
     return NextResponse.json({
       processed: true,
       score: result.score,
@@ -97,6 +100,7 @@ export async function POST(req: NextRequest) {
     }
     await setReviewStatus(questionIndex, playerId, "failed");
     const message = err instanceof Error ? err.message : "AI review failed";
+    await setAiError(message);
     return NextResponse.json({
       processed: false,
       error: message,

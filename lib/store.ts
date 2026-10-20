@@ -361,6 +361,13 @@ export async function setAiQuota(
   });
 }
 
+/** Surface a non-quota AI error to the facilitator without pausing the queue. */
+export async function setAiError(error: string | null): Promise<void> {
+  await updateMeta((m) => {
+    m.aiError = error;
+  });
+}
+
 /** Read-modify-write on the small control-state object (host actions only). */
 export async function updateMeta(
   mutate: (meta: GameMeta) => void
