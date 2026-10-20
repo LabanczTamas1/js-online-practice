@@ -2,6 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 
+export type ReviewStatus =
+  | "pending"
+  | "reviewing"
+  | "done"
+  | "failed"
+  | "skipped";
+
 export interface LiveAnswer {
   playerId: string;
   playerName: string;
@@ -10,6 +17,10 @@ export interface LiveAnswer {
   submittedAt: number;
   correct?: boolean;
   points?: number;
+  scoredBy?: "ai" | "facilitator";
+  aiScore?: number;
+  aiJustification?: string;
+  reviewStatus?: ReviewStatus;
 }
 
 export interface LivePlayer {
@@ -41,9 +52,10 @@ export interface LeaderboardEntry {
 }
 
 export interface ResultCell {
-  status: "correct" | "wrong" | "ungraded" | "none";
+  status: "correct" | "wrong" | "scored" | "pending" | "none";
   optionIndex?: number;
   value?: string;
+  score?: number;
 }
 
 export interface ResultsMatrix {
@@ -55,6 +67,15 @@ export interface ResultsMatrix {
     correct: number;
     cells: ResultCell[];
   }>;
+}
+
+export interface MyReview {
+  reviewStatus?: ReviewStatus;
+  aiScore?: number;
+  aiJustification?: string;
+  points?: number;
+  scoredBy?: "ai" | "facilitator";
+  correct?: boolean;
 }
 
 export interface LiveState {
@@ -69,6 +90,9 @@ export interface LiveState {
   answers: LiveAnswer[];
   answerCount: number;
   leaderboard: LeaderboardEntry[];
+  myReview: MyReview | null;
+  aiQuotaHit?: boolean;
+  aiError?: string | null;
   results: ResultsMatrix | null;
   questionTitles: Array<{ type: string; prompt: string }> | null;
   updatedAt: number;
@@ -79,7 +103,11 @@ export interface LiveState {
  * used instead of WebSockets because it works reliably on Vercel's free,
  * serverless hosting with zero extra infrastructure.
  */
-export function useLiveState(role: "host" | "player", intervalMs = 1500) {
+export function useLiveState(
+  role: "host" | "player",
+  intervalMs = 1500,
+  playerId?: string
+) {
   const [state, setState] = useState<LiveState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -89,7 +117,10 @@ export function useLiveState(role: "host" | "player", intervalMs = 1500) {
 
     async function tick() {
       try {
-        const res = await fetch(`/api/state?role=${role}`, {
+        const url =
+          `/api/state?role=${role}` +
+          (playerId ? `&pid=${encodeURIComponent(playerId)}` : "");
+        const res = await fetch(url, {
           cache: "no-store",
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -112,7 +143,7 @@ export function useLiveState(role: "host" | "player", intervalMs = 1500) {
       cancelled = true;
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [role, intervalMs]);
+  }, [role, intervalMs, playerId]);
 
   return { state, error };
 }

@@ -11,8 +11,8 @@ interface StoredPlayer {
 }
 
 export default function PlayPage() {
-  const { state } = useLiveState("player", 1500);
   const [player, setPlayer] = useState<StoredPlayer | null>(null);
+  const { state } = useLiveState("player", 1500, player?.playerId);
   const [name, setName] = useState("");
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -375,6 +375,44 @@ export default function PlayPage() {
                 </pre>
               </div>
             )}
+
+            {/* Your review (code/text answers, after reveal) */}
+            {state!.revealed &&
+              q.type !== "multiple-choice" &&
+              state!.myReview && (
+                <div className="mt-5 rounded-xl border border-fuchsia-400/30 bg-fuchsia-500/10 p-4">
+                  <div className="text-sm font-semibold text-fuchsia-200">
+                    Your score
+                  </div>
+                  {typeof state!.myReview.points === "number" ? (
+                    <div className="mt-1 text-2xl font-extrabold">
+                      {state!.myReview.points}/10
+                      <span className="ml-2 text-xs font-normal text-white/60">
+                        {state!.myReview.scoredBy === "facilitator"
+                          ? "(by facilitator)"
+                          : "(AI review)"}
+                      </span>
+                    </div>
+                  ) : state!.myReview.reviewStatus === "reviewing" ? (
+                    <div className="mt-1 text-sm text-cyan-200">
+                      AI is reviewing your answer…
+                    </div>
+                  ) : state!.myReview.reviewStatus === "pending" ? (
+                    <div className="mt-1 text-sm text-white/60">
+                      Waiting to be reviewed…
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-sm text-white/60">
+                      Awaiting the facilitator&apos;s score.
+                    </div>
+                  )}
+                  {state!.myReview.aiJustification && (
+                    <p className="mt-2 text-sm text-white/85">
+                      {state!.myReview.aiJustification}
+                    </p>
+                  )}
+                </div>
+              )}
 
             <div className="mt-4 text-center text-sm text-white/50">
               {state!.answerCount} of {state!.playerCount} answered

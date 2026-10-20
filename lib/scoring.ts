@@ -10,10 +10,17 @@ export interface LeaderboardEntry {
 }
 
 export interface ResultCell {
-  /** "correct" | "wrong" | "ungraded" | "none" */
-  status: "correct" | "wrong" | "ungraded" | "none";
+  /**
+   * correct/wrong → multiple-choice outcome.
+   * scored → code/text answer with a 0-10 score (see `score`).
+   * pending → code/text answer still awaiting review.
+   * none → the student did not answer.
+   */
+  status: "correct" | "wrong" | "scored" | "pending" | "none";
   optionIndex?: number;
   value?: string;
+  /** 0-10 score for code/text answers. */
+  score?: number;
 }
 
 export interface ResultsMatrix {
@@ -30,23 +37,10 @@ export interface ResultsMatrix {
   }>;
 }
 
-/** Points for a correct answer. */
-export const BASE_POINTS = 1000;
-export const MIN_POINTS = 500;
-export const MANUAL_POINTS = 800;
-
-/**
- * Speed-based points for an auto-graded (multiple-choice) correct answer.
- * Faster answers score more, with a floor so being correct always beats wrong.
- */
-export function speedPoints(
-  submittedAt: number,
-  questionStartedAt: number | null
-): number {
-  if (!questionStartedAt) return BASE_POINTS;
-  const seconds = Math.max(0, (submittedAt - questionStartedAt) / 1000);
-  return Math.max(MIN_POINTS, Math.round(BASE_POINTS - seconds * 25));
-}
+/** Points awarded for a correct multiple-choice answer. */
+export const MCQ_POINTS = 5;
+/** Max score for an AI/facilitator-graded code or text answer. */
+export const MAX_CODE_SCORE = 10;
 
 export function buildLeaderboard(
   state: GameState,
@@ -118,12 +112,21 @@ export function buildResultsMatrix(
   const rows = players.map((p) => {
     const cells: ResultCell[] = questionIndexes.map((qi) => {
       const ans = state.answers[qi]?.[p.id];
+      const q = questions[qi];
       if (!ans) return { status: "none" };
-      let status: ResultCell["status"];
-      if (ans.correct === true) status = "correct";
-      else if (ans.correct === false) status = "wrong";
-      else status = "ungraded";
-      return { status, optionIndex: ans.optionIndex, value: ans.value };
+      if (q.type === "multiple-choice") {
+        return {
+          status: ans.correct ? "correct" : "wrong",
+          optionIndex: ans.optionIndex,
+        };
+      }
+      // code / text answer
+      const scored =
+        ans.reviewStatus === "done" || typeof ans.points === "number";
+      if (scored) {
+        return { status: "scored", score: ans.points ?? 0, value: ans.value };
+      }
+      return { status: "pending", value: ans.value };
     });
     return {
       playerId: p.id,

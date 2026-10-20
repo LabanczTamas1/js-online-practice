@@ -25,12 +25,15 @@ const META_KEY = "jsgame:meta";
 const PLAYERS_KEY = "jsgame:players";
 const ANSWERS_KEY = "jsgame:answers";
 const NAMES_KEY = "jsgame:names";
+const QUEUE_KEY = "jsgame:reviewq";
 
 interface GameMeta {
   phase: GamePhase;
   currentQuestionIndex: number;
   revealed: boolean;
   questionStartedAt: number | null;
+  aiQuotaHit?: boolean;
+  aiError?: string | null;
   updatedAt: number;
 }
 
@@ -40,6 +43,8 @@ function defaultMeta(): GameMeta {
     currentQuestionIndex: -1,
     revealed: false,
     questionStartedAt: null,
+    aiQuotaHit: false,
+    aiError: null,
     updatedAt: Date.now(),
   };
 }
@@ -54,6 +59,7 @@ const redis = hasRedis ? Redis.fromEnv() : null;
 const globalForStore = globalThis as unknown as {
   __jsGameState?: GameState;
   __jsGameNames?: Record<string, string>;
+  __jsGameQueue?: string[];
 };
 
 function memState(): GameState {
@@ -68,6 +74,13 @@ function memNames(): Record<string, string> {
     globalForStore.__jsGameNames = {};
   }
   return globalForStore.__jsGameNames;
+}
+
+function memQueue(): string[] {
+  if (!globalForStore.__jsGameQueue) {
+    globalForStore.__jsGameQueue = [];
+  }
+  return globalForStore.__jsGameQueue;
 }
 
 export function usingRedis(): boolean {
@@ -106,6 +119,8 @@ export async function getState(): Promise<GameState> {
     questionStartedAt: m.questionStartedAt,
     players,
     answers,
+    aiQuotaHit: m.aiQuotaHit ?? false,
+    aiError: m.aiError ?? null,
     updatedAt: m.updatedAt,
   };
 }
@@ -178,6 +193,134 @@ export async function markAnswer(
   await touchMeta();
 }
 
+
+/**
+ * Record an AI review for a code/text answer. Sets aiScore/aiJustification/
+ * reviewStatus. Only applies the score to `points`/`scoredBy` if the
+ * facilitator has not already scored it manually.
+ */
+export async function setAiReview(
+  questionIndex: number,
+  playerId: string,
+  aiScore: number,
+  justification: string,
+  status: Answer["reviewStatus"] = "done"
+): Promise<void> {
+  const apply = (ans: Answer) => {
+    ans.aiScore = aiScore;
+    ans.aiJustification = justification;
+    ans.reviewStatus = status;
+    if (ans.scoredBy !== "facilitator") {
+      ans.points = aiScore;
+      ans.scoredBy = "ai";
+    }
+  };
+  if (!redis) {
+    const ans = memState().answers[questionIndex]?.[playerId];
+    if (ans) apply(ans);
+    return;
+  }
+  const field = `${questionIndex}:${playerId}`;
+  const ans = await redis.hget<Answer>(ANSWERS_KEY, field);
+  if (!ans) return;
+  apply(ans);
+  await redis.hset(ANSWERS_KEY, { [field]: ans });
+  await touchMeta();
+}
+
+/** Mark a review as currently being processed (or failed/skipped). */
+export async function setReviewStatus(
+  questionIndex: number,
+  playerId: string,
+  status: Answer["reviewStatus"]
+): Promise<void> {
+  if (!redis) {
+    const ans = memState().answers[questionIndex]?.[playerId];
+    if (ans) ans.reviewStatus = status;
+    return;
+  }
+  const field = `${questionIndex}:${playerId}`;
+  const ans = await redis.hget<Answer>(ANSWERS_KEY, field);
+  if (!ans) return;
+  ans.reviewStatus = status;
+  await redis.hset(ANSWERS_KEY, { [field]: ans });
+  await touchMeta();
+}
+
+/** Facilitator sets a manual 0-10 score for a code/text answer. */
+export async function setManualScore(
+  questionIndex: number,
+  playerId: string,
+  points: number
+): Promise<void> {
+  const apply = (ans: Answer) => {
+    ans.points = points;
+    ans.scoredBy = "facilitator";
+    ans.reviewStatus = "done";
+  };
+  if (!redis) {
+    const ans = memState().answers[questionIndex]?.[playerId];
+    if (ans) apply(ans);
+    return;
+  }
+  const field = `${questionIndex}:${playerId}`;
+  const ans = await redis.hget<Answer>(ANSWERS_KEY, field);
+  if (!ans) return;
+  apply(ans);
+  await redis.hset(ANSWERS_KEY, { [field]: ans });
+  await touchMeta();
+}
+
+/** Push an answer onto the AI review queue. */
+export async function enqueueReview(
+  questionIndex: number,
+  playerId: string
+): Promise<void> {
+  const item = `${questionIndex}:${playerId}`;
+  if (!redis) {
+    memQueue().push(item);
+    return;
+  }
+  await redis.rpush(QUEUE_KEY, item);
+}
+
+/** Pop the next answer to review, or null if the queue is empty. */
+export async function dequeueReview(): Promise<{
+  questionIndex: number;
+  playerId: string;
+} | null> {
+  let item: string | null = null;
+  if (!redis) {
+    item = memQueue().shift() ?? null;
+  } else {
+    item = await redis.lpop<string>(QUEUE_KEY);
+  }
+  if (!item) return null;
+  const sep = item.indexOf(":");
+  if (sep < 0) return null;
+  return {
+    questionIndex: Number(item.slice(0, sep)),
+    playerId: item.slice(sep + 1),
+  };
+}
+
+/** How many answers are still waiting for AI review. */
+export async function reviewQueueLength(): Promise<number> {
+  if (!redis) return memQueue().length;
+  return (await redis.llen(QUEUE_KEY)) ?? 0;
+}
+
+/** Flag/clear the AI quota-reached state for the facilitator. */
+export async function setAiQuota(
+  hit: boolean,
+  error: string | null = null
+): Promise<void> {
+  await updateMeta((m) => {
+    m.aiQuotaHit = hit;
+    m.aiError = error;
+  });
+}
+
 /** Read-modify-write on the small control-state object (host actions only). */
 export async function updateMeta(
   mutate: (meta: GameMeta) => void
@@ -189,6 +332,8 @@ export async function updateMeta(
       currentQuestionIndex: s.currentQuestionIndex,
       revealed: s.revealed,
       questionStartedAt: s.questionStartedAt,
+      aiQuotaHit: s.aiQuotaHit,
+      aiError: s.aiError,
       updatedAt: Date.now(),
     };
     mutate(m);
@@ -196,6 +341,8 @@ export async function updateMeta(
     s.currentQuestionIndex = m.currentQuestionIndex;
     s.revealed = m.revealed;
     s.questionStartedAt = m.questionStartedAt;
+    s.aiQuotaHit = m.aiQuotaHit;
+    s.aiError = m.aiError;
     s.updatedAt = Date.now();
     return;
   }
@@ -213,11 +360,15 @@ export async function resetGame(): Promise<void> {
     s.currentQuestionIndex = -1;
     s.revealed = false;
     s.questionStartedAt = null;
+    s.aiQuotaHit = false;
+    s.aiError = null;
     s.answers = {};
     s.updatedAt = Date.now();
+    memQueue().length = 0;
     return;
   }
   await redis.del(ANSWERS_KEY);
+  await redis.del(QUEUE_KEY);
   await redis.set(META_KEY, defaultMeta());
 }
 

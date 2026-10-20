@@ -33,6 +33,13 @@ export interface Player {
   joinedAt: number;
 }
 
+export type ReviewStatus =
+  | "pending" // queued, waiting for the AI
+  | "reviewing" // currently being sent to the AI
+  | "done" // AI (or facilitator) produced a score
+  | "failed" // AI call failed (e.g. quota) — needs manual scoring
+  | "skipped"; // no AI configured — manual scoring expected
+
 export interface Answer {
   playerId: string;
   playerName: string;
@@ -41,13 +48,23 @@ export interface Answer {
   optionIndex?: number;
   submittedAt: number;
   /**
-   * Whether the answer is correct. Auto-set for multiple-choice on submit;
-   * set by the facilitator (via the "mark" action) for code/text answers.
-   * `undefined` means not yet graded.
+   * Whether the answer is correct. Auto-set for multiple-choice on submit.
+   * `undefined` for code/text answers (they use a 0-10 score instead).
    */
   correct?: boolean;
-  /** Points awarded for this answer (0 if incorrect / ungraded). */
+  /**
+   * Final points awarded. MCQ: 5 if correct else 0. Code/text: a 0-10 score
+   * from the AI reviewer or the facilitator's manual override.
+   */
   points?: number;
+  /** Who set the final `points`. */
+  scoredBy?: "ai" | "facilitator";
+  /** AI reviewer's 0-10 score (code/text only). */
+  aiScore?: number;
+  /** AI reviewer's brief justification pointing out mistakes. */
+  aiJustification?: string;
+  /** Review lifecycle for code/text answers. */
+  reviewStatus?: ReviewStatus;
 }
 
 export interface GameState {
@@ -59,6 +76,10 @@ export interface GameState {
   players: Record<string, Player>;
   /** answers[questionIndex][playerId] = Answer */
   answers: Record<number, Record<string, Answer>>;
+  /** True once an AI quota/rate limit was hit; facilitator scores manually. */
+  aiQuotaHit?: boolean;
+  /** Last AI error message (for the facilitator notification). */
+  aiError?: string | null;
   updatedAt: number;
 }
 

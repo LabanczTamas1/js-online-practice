@@ -38,27 +38,54 @@ export default function HostPage() {
     }
   }
 
-  async function mark(
+  async function score(
     playerId: string,
     questionIndex: number,
-    correct: boolean
+    points: number
   ) {
     try {
       await fetch("/api/host", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "mark",
+          action: "score",
           token,
           playerId,
           questionIndex,
-          correct,
+          points,
         }),
       });
     } catch {
       /* ignore transient errors; next poll reflects state */
     }
   }
+
+  async function resumeAi() {
+    try {
+      await fetch("/api/host", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resumeAi", token }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Drive the AI review queue one item at a time (~every 4.5s) so we stay
+  // comfortably within the free-tier rate limit. Pauses while quota is hit.
+  const quotaHit = state?.aiQuotaHit ?? false;
+  useEffect(() => {
+    if (quotaHit) return;
+    const t = setInterval(() => {
+      fetch("/api/review/tick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      }).catch(() => {});
+    }, 4500);
+    return () => clearInterval(t);
+  }, [quotaHit, token]);
 
   const q = state?.question ?? null;
   const idx = state?.currentQuestionIndex ?? -1;
@@ -96,6 +123,23 @@ export default function HostPage() {
           )}
           {error && <span className="text-sm text-amber-300">conn: {error}</span>}
         </div>
+
+        {/* AI quota notification */}
+        {state?.aiQuotaHit && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-400/40 bg-amber-500/15 p-3">
+            <span className="text-amber-200 text-sm">
+              ⚠️ AI reviewer paused — rate limit / quota reached
+              {state.aiError ? `: ${state.aiError}` : "."} Score code/text
+              answers manually with the sliders below.
+            </span>
+            <button
+              onClick={resumeAi}
+              className="ml-auto rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-black hover:bg-amber-400"
+            >
+              Resume AI
+            </button>
+          </div>
+        )}
 
         {/* Controls */}
         <div className="mt-4 flex flex-wrap gap-2">
@@ -283,34 +327,37 @@ export default function HostPage() {
                           </pre>
                         )}
 
-                        {/* Manual grading for code/text answers */}
+                        {/* AI review + manual 0-10 scoring for code/text */}
                         {!mc && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <button
-                              onClick={() => mark(a.playerId, idx, true)}
-                              className={`rounded-md px-2 py-1 text-xs font-semibold ${
-                                a.correct === true
-                                  ? "bg-emerald-500 text-black"
-                                  : "bg-white/10 hover:bg-emerald-500/40"
-                              }`}
-                            >
-                              ✓ Correct
-                            </button>
-                            <button
-                              onClick={() => mark(a.playerId, idx, false)}
-                              className={`rounded-md px-2 py-1 text-xs font-semibold ${
-                                a.correct === false
-                                  ? "bg-rose-500 text-black"
-                                  : "bg-white/10 hover:bg-rose-500/40"
-                              }`}
-                            >
-                              ✗ Wrong
-                            </button>
-                            {a.correct === undefined && (
-                              <span className="text-xs text-white/40">
-                                ungraded
-                              </span>
+                          <div className="mt-2 space-y-2">
+                            {a.aiJustification && (
+                              <div className="rounded-md bg-fuchsia-500/10 border border-fuchsia-400/20 px-2 py-1.5 text-xs text-fuchsia-100">
+                                <span className="font-semibold">
+                                  AI {a.aiScore}/10
+                                </span>{" "}
+                                — {a.aiJustification}
+                              </div>
                             )}
+                            {a.reviewStatus === "reviewing" && (
+                              <div className="text-xs text-cyan-300">
+                                AI reviewing…
+                              </div>
+                            )}
+                            {a.reviewStatus === "pending" && (
+                              <div className="text-xs text-white/40">
+                                queued for AI review…
+                              </div>
+                            )}
+                            {a.reviewStatus === "failed" && (
+                              <div className="text-xs text-amber-300">
+                                AI unavailable — score manually
+                              </div>
+                            )}
+                            <ScoreSlider
+                              value={a.points}
+                              scoredBy={a.scoredBy}
+                              onCommit={(pts) => score(a.playerId, idx, pts)}
+                            />
                           </div>
                         )}
                       </div>
@@ -398,8 +445,8 @@ function EndResults({ state }: { state: LiveState | null }) {
       <section className="rounded-2xl bg-white/5 p-5">
         <h2 className="text-xl font-bold">Results by question</h2>
         <p className="mt-1 text-sm text-white/60">
-          ✓ correct · ✗ wrong · — not answered · ? not graded (mark code/text
-          answers while reviewing).
+          ✓ correct · ✗ wrong · 0-10 code/text score · ⏳ awaiting review · —
+          not answered.
         </p>
         <div className="mt-4 overflow-auto">
           <table className="w-full text-sm border-collapse">
@@ -435,8 +482,13 @@ function EndResults({ state }: { state: LiveState | null }) {
                         {c.status === "wrong" && (
                           <span className="text-rose-300">✗</span>
                         )}
-                        {c.status === "ungraded" && (
-                          <span className="text-amber-300">?</span>
+                        {c.status === "scored" && (
+                          <span className="font-semibold text-cyan-200">
+                            {c.score}
+                          </span>
+                        )}
+                        {c.status === "pending" && (
+                          <span className="text-amber-300">⏳</span>
                         )}
                         {c.status === "none" && (
                           <span className="text-white/25">—</span>
@@ -462,6 +514,54 @@ function EndResults({ state }: { state: LiveState | null }) {
           </table>
         </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * 0-10 slider for the facilitator to score (or override) a code/text answer.
+ * Commits on release so we don't spam the API while dragging.
+ */
+function ScoreSlider({
+  value,
+  scoredBy,
+  onCommit,
+}: {
+  value?: number;
+  scoredBy?: "ai" | "facilitator";
+  onCommit: (points: number) => void;
+}) {
+  const [local, setLocal] = useState<number>(value ?? 5);
+
+  useEffect(() => {
+    if (typeof value === "number") setLocal(value);
+  }, [value]);
+
+  return (
+    <div className="flex items-center gap-3">
+      <input
+        type="range"
+        min={0}
+        max={10}
+        step={1}
+        value={local}
+        onChange={(e) => setLocal(Number(e.target.value))}
+        onMouseUp={() => onCommit(local)}
+        onTouchEnd={() => onCommit(local)}
+        className="flex-1 accent-fuchsia-400"
+      />
+      <span className="w-14 text-right text-sm font-bold">{local}/10</span>
+      {scoredBy && (
+        <span
+          className={`rounded px-1.5 py-0.5 text-[10px] uppercase ${
+            scoredBy === "facilitator"
+              ? "bg-emerald-500/30 text-emerald-200"
+              : "bg-fuchsia-500/30 text-fuchsia-200"
+          }`}
+        >
+          {scoredBy === "facilitator" ? "manual" : "ai"}
+        </span>
+      )}
     </div>
   );
 }

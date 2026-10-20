@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateMeta, resetGame, markAnswer, getState } from "@/lib/store";
+import {
+  updateMeta,
+  resetGame,
+  markAnswer,
+  setManualScore,
+  setAiQuota,
+  getState,
+} from "@/lib/store";
 import { questions } from "@/lib/questions";
-import { MANUAL_POINTS } from "@/lib/scoring";
+import { MCQ_POINTS } from "@/lib/scoring";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +34,9 @@ type Action =
   | "results"
   | "reset"
   | "end"
-  | "mark";
+  | "mark"
+  | "score"
+  | "resumeAi";
 
 export async function POST(req: NextRequest) {
   let body: {
@@ -37,6 +46,7 @@ export async function POST(req: NextRequest) {
     playerId?: string;
     questionIndex?: number;
     correct?: boolean;
+    points?: number;
   };
   try {
     body = await req.json();
@@ -58,6 +68,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, phase: "lobby" });
   }
 
+  if (action === "resumeAi") {
+    await setAiQuota(false, null);
+    const state = await getState();
+    return NextResponse.json({ ok: true, phase: state.phase });
+  }
+
+  if (action === "score") {
+    if (
+      typeof body.questionIndex === "number" &&
+      typeof body.playerId === "string" &&
+      typeof body.points === "number"
+    ) {
+      const points = Math.max(0, Math.min(10, Math.round(body.points)));
+      await setManualScore(body.questionIndex, body.playerId, points);
+    }
+    const state = await getState();
+    return NextResponse.json({ ok: true, phase: state.phase });
+  }
+
   if (action === "mark") {
     if (
       typeof body.questionIndex === "number" &&
@@ -68,7 +97,7 @@ export async function POST(req: NextRequest) {
         body.questionIndex,
         body.playerId,
         body.correct,
-        body.correct ? MANUAL_POINTS : 0
+        body.correct ? MCQ_POINTS : 0
       );
     }
     const state = await getState();

@@ -46,10 +46,24 @@ Open http://localhost:3000 — use `/host` in one tab and `/play` in another.
      - `UPSTASH_REDIS_REST_URL`
      - `UPSTASH_REDIS_REST_TOKEN`
      - (optional) `HOST_TOKEN` — any secret string to lock the host controls.
+     - (optional) `GEMINI_API_KEY` — enables the AI reviewer for code/text
+       answers (free-tier [Google AI Studio](https://aistudio.google.com/app/apikey)).
+       Optionally set `GEMINI_MODEL` (default `gemini-2.0-flash`).
    - Redeploy.
 
 That's it — everything here fits comfortably inside the Vercel Hobby (free) and
 Upstash free tiers.
+
+### Scoring & AI review
+
+- **Multiple-choice** answers auto-score **5 points** when correct.
+- **Code / text** answers get a **0-10 score**. If `GEMINI_API_KEY` is set, each
+  answer is reviewed one-by-one by Gemini, which returns a score plus a brief
+  justification pointing only at mistakes. The facilitator can override any
+  score with a 0-10 slider.
+- If the AI free-tier quota / rate limit is hit, the facilitator sees a banner
+  and the game continues with manual scoring; press **Resume AI** to retry.
+
 
 ### Why Redis?
 

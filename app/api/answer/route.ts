@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addAnswer, getState } from "@/lib/store";
-import { Answer, isAnswerable } from "@/lib/types";
+import { addAnswer, enqueueReview, getState } from "@/lib/store";
+import { Answer, ReviewStatus, isAnswerable } from "@/lib/types";
 import { questions } from "@/lib/questions";
-import { speedPoints } from "@/lib/scoring";
+import { MCQ_POINTS } from "@/lib/scoring";
+import { aiEnabled } from "@/lib/gemini";
 
 export const dynamic = "force-dynamic";
 
@@ -51,12 +52,16 @@ export async function POST(req: NextRequest) {
 
   // Auto-grade multiple-choice answers immediately.
   let correct: boolean | undefined;
-  let points = 0;
+  let points: number | undefined;
+  let reviewStatus: ReviewStatus | undefined;
   if (currentQuestion.type === "multiple-choice") {
     correct =
       typeof body.optionIndex === "number" &&
       body.optionIndex === currentQuestion.correctOption;
-    points = correct ? speedPoints(Date.now(), state.questionStartedAt) : 0;
+    points = correct ? MCQ_POINTS : 0;
+  } else {
+    // Code / text answers are graded by the AI reviewer (or the facilitator).
+    reviewStatus = aiEnabled() ? "pending" : "skipped";
   }
 
   const answer: Answer = {
@@ -68,9 +73,15 @@ export async function POST(req: NextRequest) {
     submittedAt: Date.now(),
     correct,
     points,
+    reviewStatus,
   };
 
   await addAnswer(idx, answer);
+
+  // Queue code/text answers for one-by-one AI review.
+  if (reviewStatus === "pending") {
+    await enqueueReview(idx, playerId);
+  }
 
   return NextResponse.json({ ok: true });
 }

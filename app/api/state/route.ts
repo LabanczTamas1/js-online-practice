@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: NextRequest) {
   const role = req.nextUrl.searchParams.get("role") ?? "player";
+  const pid = req.nextUrl.searchParams.get("pid") ?? undefined;
   const state = await getState();
 
   const idx = state.currentQuestionIndex;
@@ -29,6 +30,30 @@ export async function GET(req: NextRequest) {
     idx >= 0 ? Object.values(state.answers[idx] ?? {}) : [];
 
   const leaderboard = buildLeaderboard(state, questions);
+
+  // A student's own review (AI score + justification) for the current
+  // question, shown only after the facilitator reveals the answer.
+  let myReview: {
+    reviewStatus?: string;
+    aiScore?: number;
+    aiJustification?: string;
+    points?: number;
+    scoredBy?: string;
+    correct?: boolean;
+  } | null = null;
+  if (role !== "host" && pid && idx >= 0 && state.revealed) {
+    const mine = state.answers[idx]?.[pid];
+    if (mine) {
+      myReview = {
+        reviewStatus: mine.reviewStatus,
+        aiScore: mine.aiScore,
+        aiJustification: mine.aiJustification,
+        points: mine.points,
+        scoredBy: mine.scoredBy,
+        correct: mine.correct,
+      };
+    }
+  }
 
   return NextResponse.json({
     phase: state.phase,
@@ -51,6 +76,10 @@ export async function GET(req: NextRequest) {
           })),
     answerCount: answersForQuestion.length,
     leaderboard,
+    myReview,
+    // AI reviewer status is surfaced to the facilitator only.
+    aiQuotaHit: role === "host" ? state.aiQuotaHit ?? false : undefined,
+    aiError: role === "host" ? state.aiError ?? null : undefined,
     // Full per-question results matrix is host-only.
     results: role === "host" ? buildResultsMatrix(state, questions) : null,
     // Question prompts for the results table header (host-only).
